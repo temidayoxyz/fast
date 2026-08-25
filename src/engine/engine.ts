@@ -8,7 +8,7 @@
 
 import { runDownload } from './download';
 import { LoadedProbes, measureIdle, type PopInfo } from './latency';
-import { cv as coeffVar, trimmedMean, type Sample } from './stats';
+import { cv as coeffVar, isAbortErr, trimmedMean, type Sample } from './stats';
 import {
   startUploadBlob,
   startUploadStreaming,
@@ -140,6 +140,8 @@ export class SpeedTest {
     if (!this.running) return;
     this.userAborted = true;
     this.naturalStop = false;
+    this.stopTicker();
+    this.loaded.stop();
     this.ctl?.abort();
   };
 
@@ -219,7 +221,9 @@ export class SpeedTest {
     } catch (err) {
       this.stopTicker();
       this.loaded.stop();
-      const failed = err instanceof Error && err.name !== 'AbortError';
+      // Intended stops (user abort, or the ticker's natural abort where any
+      // secondary stream failures are just wind-down noise) are not errors.
+      const failed = !this.naturalStop && !this.userAborted && !isAbortErr(err);
       this.snap = {
         ...this.snap,
         error: failed ? 'CONNECTION FAILED — CHECK NETWORK' : null,

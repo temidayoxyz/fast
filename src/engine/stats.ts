@@ -46,3 +46,6 @@ export const meanAbsDelta = (a: number[]): number => {
   for (let i = 1; i < a.length; i++) sum += Math.abs(a[i] - a[i - 1]);
   return sum / (a.length - 1);
 };
+
+export const isAbortErr = (err: unknown): boolean =>
+  err instanceof Error && err.name === 'AbortError';

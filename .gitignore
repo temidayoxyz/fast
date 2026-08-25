@@ -3,5 +3,6 @@ dist/
 public/blobs/
 .wrangler/
 .dev.vars
+.env
 *.local
 *.log

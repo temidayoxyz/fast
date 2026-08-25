@@ -12,7 +12,9 @@
 // implementation reads `duplex` and refuses to infer Content-Type from a
 // stream body; pretenders never touch the accessor.
 
-import { mean } from './stats';
+import { isAbortErr, mean } from './stats';
+
+const MAX_FAILURES = 3;
 
 const STREAM_CHUNK = 1 << 20; // 1 MiB per streamed chunk
 const PAYLOAD_SIZE = 16 << 20; // 16 MiB per blob POST (under the 100 MB cap)
@@ -73,14 +75,22 @@ export function startUploadStreaming(opts: {
     });
 
   const worker = async (): Promise<void> => {
+    let failures = 0;
     while (!opts.signal.aborted) {
-      await fetch('/api/upload', {
-        method: 'POST',
-        body: makeBody(),
-        duplex: 'half',
-        signal: opts.signal,
-        headers: { 'content-type': 'application/octet-stream' },
-      } as RequestInit);
+      try {
+        await fetch('/api/upload', {
+          method: 'POST',
+          body: makeBody(),
+          duplex: 'half',
+          signal: opts.signal,
+          headers: { 'content-type': 'application/octet-stream' },
+        } as RequestInit);
+        failures = 0;
+      } catch (err) {
+        if (opts.signal.aborted || isAbortErr(err)) throw err;
+        if (++failures > MAX_FAILURES) throw err;
+        await new Promise((r) => setTimeout(r, 250 * failures));
+      }
     }
   };
 
@@ -109,19 +119,31 @@ export function startUploadBlob(opts: {
   let rate = PAYLOAD_SIZE / 1500;
 
   const worker = async (): Promise<void> => {
+    let failures = 0;
     while (!opts.signal.aborted) {
       const job: Job = { start: performance.now(), done: false };
       jobs.push(job);
-      await fetch('/api/upload', {
-        method: 'POST',
-        body: payload,
-        signal: opts.signal,
-        cache: 'no-store',
-        headers: { 'content-type': 'application/octet-stream' },
-      });
+      try {
+        await fetch('/api/upload', {
+          method: 'POST',
+          body: payload,
+          signal: opts.signal,
+          cache: 'no-store',
+          headers: { 'content-type': 'application/octet-stream' },
+        });
+      } catch (err) {
+        // freeze partial attribution for the dead job, then retry — bytes
+        // already sent stay credited, so the curve never jumps backwards
+        job.done = true;
+        if (opts.signal.aborted || isAbortErr(err)) throw err;
+        if (++failures > MAX_FAILURES) throw err;
+        await new Promise((r) => setTimeout(r, 250 * failures));
+        continue;
+      }
       job.done = true;
       rates.push(PAYLOAD_SIZE / (performance.now() - job.start));
       rate = mean(rates);
+      failures = 0;
     }
   };
 
