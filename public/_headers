@@ -1,0 +1,10 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: interest-cohort=()
+
+/assets/*
+  Cache-Control: public, max-age=31556952, immutable
+
+/blobs/*
+  Cache-Control: no-store
