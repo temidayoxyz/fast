@@ -82,9 +82,9 @@ function render(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, live: 
 
 function drawTrace(ctx: CanvasRenderingContext2D, w: number, h: number, visible: Sample[]): void {
   const maxV = Math.max(1, ...visible.map((s) => s.v)) * 1.15;
-  // anchor the latest sample at the right edge; scroll as history accumulates
-  const xAt = (i: number): number =>
-    w - ((visible.length - 1 - i) / (WINDOW - 1)) * w;
+  // oscilloscope sweep: left→right, stretching to fill the width as the
+  // record grows — legible for short tests, full-width when frozen
+  const xAt = (i: number): number => (i / Math.max(1, visible.length - 1)) * w;
   const yAt = (v: number): number => h - 8 - (v / maxV) * (h - 16);
 
   // area fill
@@ -100,7 +100,7 @@ function drawTrace(ctx: CanvasRenderingContext2D, w: number, h: number, visible:
   ctx.beginPath();
   visible.forEach((s, i) => (i === 0 ? ctx.moveTo(xAt(i), yAt(s.v)) : ctx.lineTo(xAt(i), yAt(s.v))));
   ctx.strokeStyle = SIGNAL;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.stroke();

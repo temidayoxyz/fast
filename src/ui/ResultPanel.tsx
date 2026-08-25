@@ -2,9 +2,9 @@ import { useState } from 'react';
 import type { TestResult } from '../engine/engine';
 import { loadHistory } from '../lib/history';
 import { encodeResult } from '../lib/share';
-import { verdict } from '../lib/units';
+import { fmt, unitLabel, verdict, type Unit } from '../lib/units';
 
-export function ResultPanel({ result }: { result: TestResult }) {
+export function ResultPanel({ result, unit }: { result: TestResult; unit: Unit }) {
   // history[0] is this run (the engine saved it before we rendered)
   const prev = loadHistory()[1];
   const delta = prev ? ((result.downMbps - prev.d) / prev.d) * 100 : null;
@@ -28,15 +28,16 @@ export function ResultPanel({ result }: { result: TestResult }) {
 
   return (
     <div className="flex items-center justify-between gap-3 border-t border-graphite/60 pt-3">
-      <div className="flex items-baseline gap-3 sm:gap-4 min-w-0">
-        <span className="text-[10px] tracking-[0.22em] text-ash shrink-0 hidden sm:inline">
-          VERDICT
-        </span>
-        <span className="font-display font-medium tracking-[0.08em] truncate">
+      <div className="flex items-baseline gap-3 sm:gap-4 min-w-0 flex-wrap">
+        <span className="font-display font-medium tracking-[0.08em]">
           {verdict(result.downMbps)}
         </span>
+        <span className="text-xs tabular-nums whitespace-nowrap">
+          ↓ {fmt(result.downMbps, unit)} · ↑ {fmt(result.upMbps, unit)}{' '}
+          <span className="text-ash">{unitLabel(unit)}</span>
+        </span>
         {delta !== null && Number.isFinite(delta) && (
-          <span className="text-[11px] text-ash tabular-nums shrink-0">
+          <span className="text-[11px] text-ash tabular-nums shrink-0 hidden sm:inline">
             {delta >= 0 ? '▲' : '▼'} {Math.abs(delta).toFixed(1)}% VS LAST
           </span>
         )}

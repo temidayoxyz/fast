@@ -177,7 +177,9 @@ export class SpeedTest {
       await this.settle(
         runDownload({
           streams,
-          signal: ctl.signal,
+          // bind to the PER-PHASE controller — the ticker's natural stop
+          // aborts this one, not the outer controller from start()
+          signal: this.ctl!.signal,
           onBytes: (n) => {
             this.totalBytes += n;
           },
@@ -190,8 +192,8 @@ export class SpeedTest {
       this.beginTransfer('u', UL_MIN_MS, UL_CAP_MS);
       const streaming = supportsStreamingUpload();
       const run = streaming
-        ? startUploadStreaming({ streams, signal: ctl.signal })
-        : startUploadBlob({ streams, signal: ctl.signal });
+        ? startUploadStreaming({ streams, signal: this.ctl!.signal })
+        : startUploadBlob({ streams, signal: this.ctl!.signal });
       this.counter = run.counter;
       await this.settle(run.promise);
       this.live.up = this.finalizeTransfer();

@@ -88,7 +88,9 @@ export default function App() {
       </main>
 
       <footer className="shrink-0 w-full max-w-xl mx-auto px-4 pb-6 pt-2 space-y-3">
-        {snap.phase === 'done' && snap.result && <ResultPanel result={snap.result} />}
+        {snap.phase === 'done' && snap.result && (
+          <ResultPanel result={snap.result} unit={unit} />
+        )}
         <Controls
           streams={streams}
           onStreams={setStreams}
