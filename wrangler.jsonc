@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "fast-xyz",
+  "name": "fast",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-08-01",
   "assets": {
