@@ -40,6 +40,11 @@ edge, brightness scaled by queueing penalty.
 - **Preact** via `@preact/preset-vite` — React 19's react-dom alone would have
   tripled the bundle.
 
+## Deploys
+
+Push to `main` → Cloudflare Workers Builds builds and deploys automatically.
+Live at **https://fast.temidayoxyz.workers.dev**.
+
 ## Develop
 
 ```bash
