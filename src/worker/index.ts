@@ -1,5 +1,6 @@
 // Fast XYZ worker — the entire backend. Two endpoints, both trivially cheap:
-//   /api/latency — tiny JSON probe; doubles as the PoP info source (request.cf)
+//   /api/latency — tiny JSON probe; doubles as the PoP/ISP info source
+//                  (request.cf is free context Cloudflare attaches anyway)
 //   /api/upload  — drains the request body counting bytes (I/O-bound, ~zero CPU)
 // Everything else is static assets, served without touching this script
 // thanks to run_worker_first: ["/api/*"].
@@ -22,6 +23,9 @@ export default {
         colo: req.cf?.colo ?? '',
         city: req.cf?.city ?? '',
         country: req.cf?.country ?? '',
+        isp: req.cf?.asOrganization ?? '',
+        asn: req.cf?.asn ?? 0,
+        ip: req.headers.get('cf-connecting-ip') ?? '',
       });
     }
 

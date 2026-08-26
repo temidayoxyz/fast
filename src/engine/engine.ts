@@ -168,7 +168,14 @@ export class SpeedTest {
       this.live.jitter = idle.jitterMs;
       this.snap = {
         ...this.snap,
-        pop: { colo: idle.colo, city: idle.city, country: idle.country },
+        pop: {
+          colo: idle.colo,
+          city: idle.city,
+          country: idle.country,
+          isp: idle.isp,
+          asn: idle.asn,
+          ip: idle.ip,
+        },
       };
       this.emit(); // PoP badge can appear mid-run
 
@@ -218,7 +225,7 @@ export class SpeedTest {
         bloatGrade: bloatGrade(bloat),
         streams,
         uploadMode,
-        pop: this.snap.pop ?? { colo: '', city: '', country: '' },
+        pop: this.snap.pop ?? { colo: '', city: '', country: '', isp: '', asn: 0, ip: '' },
         finishedAt: Date.now(),
       };
       addHistory(result);

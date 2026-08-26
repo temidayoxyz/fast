@@ -28,7 +28,7 @@ export function encodeResult(r: TestResult): string {
     b: round2(r.bloatMs),
     s: r.streams,
     m: r.uploadMode,
-    c: [r.pop.colo, r.pop.city, r.pop.country],
+    c: [r.pop.colo, r.pop.city, r.pop.country, r.pop.isp, r.pop.asn, r.pop.ip],
     t: r.finishedAt,
   };
   return `#r=${b64url(JSON.stringify(payload))}`;
@@ -55,7 +55,14 @@ export function decodeResult(hash: string): TestResult | null {
       bloatGrade: bloatGrade(Number.isFinite(bloat) ? bloat : 999),
       streams: typeof o.s === 'number' ? o.s : 6,
       uploadMode: o.m === 'stream' ? 'stream' : 'blob',
-      pop: { colo: c[0] ?? '', city: c[1] ?? '', country: c[2] ?? '' },
+      pop: {
+        colo: c[0] ?? '',
+        city: c[1] ?? '',
+        country: c[2] ?? '',
+        isp: c[3] ?? '',
+        asn: typeof c[4] === 'number' ? c[4] : 0,
+        ip: c[5] ?? '',
+      },
       finishedAt: typeof o.t === 'number' ? o.t : Date.now(),
     };
   } catch {

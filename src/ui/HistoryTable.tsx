@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { clearHistory, loadHistory } from '../lib/history';
+import { fmtAuto } from '../lib/units';
 
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 
@@ -50,8 +51,8 @@ export function HistoryTable({ revision }: { revision: number }) {
               {entries.map((e) => (
                 <tr key={e.t} className="border-b border-graphite/30 last:border-b-0">
                   <td className="px-3 py-1.5 text-ash">{timeFmt.format(e.t)}</td>
-                  <td className="px-3 py-1.5">{e.d.toFixed(1)}</td>
-                  <td className="px-3 py-1.5 text-ash">{e.u.toFixed(1)}</td>
+                  <td className="px-3 py-1.5">{fmtAuto(e.d)}</td>
+                  <td className="px-3 py-1.5 text-ash">{fmtAuto(e.u)}</td>
                   <td className="px-3 py-1.5 text-ash">{e.p.toFixed(1)}</td>
                   <td className="px-3 py-1.5">{e.g}</td>
                   <td className="px-3 py-1.5 text-ash">{e.c}</td>

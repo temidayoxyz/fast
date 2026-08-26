@@ -7,6 +7,9 @@ export interface PopInfo {
   colo: string;
   city: string;
   country: string;
+  isp: string;
+  asn: number;
+  ip: string;
 }
 
 export interface IdleResult extends PopInfo {
@@ -18,7 +21,7 @@ const PROBE_COUNT = 12;
 
 export async function measureIdle(signal: AbortSignal): Promise<IdleResult> {
   const rtts: number[] = [];
-  let info: PopInfo = { colo: '', city: '', country: '' };
+  let info: PopInfo = { colo: '', city: '', country: '', isp: '', asn: 0, ip: '' };
 
   for (let i = 0; i < PROBE_COUNT && !signal.aborted; i++) {
     const t0 = performance.now();

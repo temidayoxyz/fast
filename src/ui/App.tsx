@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { speedTest } from '../engine/engine';
 import { useGlobalKeys } from '../lib/keys';
 import { decodeResult } from '../lib/share';
-import type { Unit } from '../lib/units';
 import { BigReadout } from './BigReadout';
 import { Controls } from './Controls';
 import { GraphCanvas } from './GraphCanvas';
@@ -20,7 +19,6 @@ const PHASE_COPY: Partial<Record<string, string>> = {
 
 export default function App() {
   const snap = useSyncExternalStore(speedTest.subscribe, speedTest.getSnapshot);
-  const [unit, setUnit] = useState<Unit>('mbps');
   const [streams, setStreams] = useState(6);
   const streamsRef = useRef(streams);
   streamsRef.current = streams;
@@ -74,7 +72,7 @@ export default function App() {
           {statusLine || ' '}
         </p>
 
-        <BigReadout unit={unit} onUnit={setUnit} phase={snap.phase} />
+        <BigReadout />
 
         <div className="w-full">
           <GraphCanvas />
@@ -88,9 +86,7 @@ export default function App() {
       </main>
 
       <footer className="shrink-0 w-full max-w-xl mx-auto px-4 pb-6 pt-2 space-y-3">
-        {snap.phase === 'done' && snap.result && (
-          <ResultPanel result={snap.result} unit={unit} />
-        )}
+        {snap.phase === 'done' && snap.result && <ResultPanel result={snap.result} />}
         <Controls
           streams={streams}
           onStreams={setStreams}

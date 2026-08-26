@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { speedTest, type Phase } from '../engine/engine';
-import { fmt, unitLabel, type Unit } from '../lib/units';
+import { autoParts } from '../lib/units';
 
 const DIRECTION: Partial<Record<Phase, string>> = {
   latency: '·',
@@ -10,18 +10,16 @@ const DIRECTION: Partial<Record<Phase, string>> = {
 
 /**
  * The giant numeral — plain DOM updated via ref (crisper than canvas text,
- * zero React churn). Click the unit line to toggle Mbps / MB/s.
+ * zero React churn). Units are adaptive: KB/s when slow, MB/s when fast;
+ * the label always says which, so there is nothing to toggle.
  */
-export function BigReadout(props: {
-  unit: Unit;
-  onUnit: (u: Unit) => void;
-  phase: Phase;
-}) {
+export function BigReadout() {
   const num = useRef<HTMLDivElement>(null);
+  const unit = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     const paint = (): void => {
-      if (!num.current) return;
+      if (!num.current || !unit.current) return;
       const live = speedTest.live;
       const phase = speedTest.getSnapshot().phase;
       const value =
@@ -31,8 +29,10 @@ export function BigReadout(props: {
             ? live.instant
             : NaN; // idle / latency / aborted → resting zero
       const has = Number.isFinite(value) && value > 0;
-      num.current.textContent = has ? fmt(value, props.unit) : '0.0';
+      const parts = autoParts(has ? value : 0);
+      num.current.textContent = parts.num;
       num.current.style.color = has ? 'var(--color-signal)' : 'rgba(138, 138, 138, 0.45)';
+      unit.current.textContent = `${parts.label} ${DIRECTION[phase] ?? ''}`;
     };
     paint();
     // coarse subscription makes the numeral switch to the final download
@@ -43,7 +43,7 @@ export function BigReadout(props: {
       offTick();
       offCoarse();
     };
-  }, [props.unit]);
+  }, []);
 
   return (
     <div className="flex flex-col items-center select-none">
@@ -54,13 +54,9 @@ export function BigReadout(props: {
       >
         0.0
       </div>
-      <button
-        onClick={() => props.onUnit(props.unit === 'mbps' ? 'mbs' : 'mbps')}
-        title="toggle units"
-        className="mt-1.5 text-[11px] tracking-[0.26em] text-ash hover:text-signal transition-colors cursor-pointer"
-      >
-        {unitLabel(props.unit)} <span className="tabular-nums">{DIRECTION[props.phase] ?? ''}</span>
-      </button>
+      <span ref={unit} className="mt-1.5 text-[11px] tracking-[0.26em] text-ash">
+        MB/s
+      </span>
     </div>
   );
 }
