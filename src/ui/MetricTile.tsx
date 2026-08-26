@@ -27,7 +27,14 @@ export function MetricTile(props: {
       }
     };
     paint();
-    return speedTest.onTick(paint);
+    // repaint on ticks AND phase transitions — terminal values (bloat grade,
+    // finalized scores) only exist after the last tick has fired
+    const offTick = speedTest.onTick(paint);
+    const offCoarse = speedTest.subscribe(paint);
+    return () => {
+      offTick();
+      offCoarse();
+    };
   }, [props.format]);
 
   return (

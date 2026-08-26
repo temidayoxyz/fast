@@ -35,7 +35,14 @@ export function BigReadout(props: {
       num.current.style.color = has ? 'var(--color-signal)' : 'rgba(138, 138, 138, 0.45)';
     };
     paint();
-    return speedTest.onTick(paint);
+    // coarse subscription makes the numeral switch to the final download
+    // score on `done` — the tick channel alone stops before that repaint
+    const offTick = speedTest.onTick(paint);
+    const offCoarse = speedTest.subscribe(paint);
+    return () => {
+      offTick();
+      offCoarse();
+    };
   }, [props.unit]);
 
   return (
