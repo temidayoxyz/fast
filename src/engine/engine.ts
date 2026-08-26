@@ -193,12 +193,18 @@ export class SpeedTest {
       // ---- upload ----
       this.beginTransfer('u', UL_MIN_MS, UL_CAP_MS);
       const streaming = supportsStreamingUpload();
-      const run = streaming
-        ? startUploadStreaming({ streams, signal: this.ctl!.signal })
-        : startUploadBlob({ streams, signal: this.ctl!.signal });
-      this.counter = run.counter;
-      await this.settle(run.promise);
+      await this.settle(this.uploadOnce(streaming, streams));
       this.live.up = this.finalizeTransfer();
+      if (this.checkUserAbort()) return;
+      let uploadMode: 'stream' | 'blob' = streaming ? 'stream' : 'blob';
+      if (streaming && this.live.up < 0.05) {
+        // Streaming path produced nothing (VPN/proxy/browser quirks can
+        // starve duplex streams). Discard its samples, rerun with blob POSTs.
+        uploadMode = 'blob';
+        this.beginTransfer('u', UL_MIN_MS, UL_CAP_MS);
+        await this.settle(this.uploadOnce(false, streams));
+        this.live.up = this.finalizeTransfer();
+      }
       this.loaded.stop();
 
       // ---- record ----
@@ -211,7 +217,7 @@ export class SpeedTest {
         bloatMs: bloat,
         bloatGrade: bloatGrade(bloat),
         streams,
-        uploadMode: streaming ? 'stream' : 'blob',
+        uploadMode,
         pop: this.snap.pop ?? { colo: '', city: '', country: '' },
         finishedAt: Date.now(),
       };
@@ -250,6 +256,14 @@ export class SpeedTest {
     }
   }
 
+  private uploadOnce(streaming: boolean, streams: number): Promise<void> {
+    const run = streaming
+      ? startUploadStreaming({ streams, signal: this.ctl!.signal })
+      : startUploadBlob({ streams, signal: this.ctl!.signal });
+    this.counter = run.counter;
+    return run.promise;
+  }
+
   private beginTransfer(kind: 'd' | 'u', minMs: number, capMs: number): void {
     this.kind = kind;
     this.minMs = minMs;
@@ -260,6 +274,8 @@ export class SpeedTest {
     this.stableRuns = 0;
     this.live.instant = 0;
     this.live.progress = 0;
+    // a retried phase (e.g. upload fallback) replaces its own samples
+    this.live.samples = this.live.samples.filter((s) => s.k !== kind);
     this.ctl = new AbortController(); // fresh per phase — natural stops don't poison the next one
     this.phaseStart = performance.now();
     this.setPhase(kind === 'd' ? 'download' : 'upload');
