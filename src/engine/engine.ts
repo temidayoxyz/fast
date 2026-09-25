@@ -9,12 +9,7 @@
 import { runDownload } from './download';
 import { LoadedProbes, measureIdle, type PopInfo } from './latency';
 import { cv as coeffVar, isAbortErr, trimmedMean, type Sample } from './stats';
-import {
-  startUploadBlob,
-  startUploadStreaming,
-  supportsStreamingUpload,
-  type ByteCounter,
-} from './upload';
+import { startUploadBlob, type ByteCounter } from './upload';
 import { addHistory } from '../lib/history';
 import { bloatGrade } from '../lib/units';
 
@@ -27,7 +22,7 @@ export interface TestResult {
   upMbps: number;
   pingMs: number;
   jitterMs: number;
-  bloatMs: number;
+  bloatMs: number | null;
   bloatGrade: string;
   streams: number;
   uploadMode: 'stream' | 'blob';
@@ -40,7 +35,7 @@ export interface Snapshot {
   error: string | null;
   result: TestResult | null;
   pop: PopInfo | null;
-  streams: number;
+  shared: boolean;
 }
 
 /** Mutable high-frequency state — read inside rAF/tick callbacks, never React state. */
@@ -53,8 +48,6 @@ export interface Live {
   jitter: number;
   samples: Sample[]; // post-warm-up trace record
   probes: { at: number; ms: number }[]; // loaded-latency marks (performance.now clock)
-  startedAt: number; // graph time-domain start
-  endedAt: number; // 0 while any phase is running
 }
 
 const TICK_MS = 100;
@@ -68,13 +61,15 @@ const DL_MIN_MS = 5000;
 const DL_CAP_MS = 12000;
 const UL_MIN_MS = 4000;
 const UL_CAP_MS = 10000;
+const STREAM_COUNT = 1;
 
 export class SpeedTest {
-  private snap: Snapshot = { phase: 'idle', error: null, result: null, pop: null, streams: 6 };
+  private snap: Snapshot = { phase: 'idle', error: null, result: null, pop: null, shared: false };
   private listeners = new Set<() => void>();
   private tickers = new Set<() => void>();
 
   private ctl: AbortController | null = null;
+  private runCtl: AbortController | null = null;
   private ticker: ReturnType<typeof setInterval> | null = null;
   private loaded = new LoadedProbes();
   private userAborted = false;
@@ -82,13 +77,14 @@ export class SpeedTest {
 
   readonly live: Live = {
     instant: 0, progress: 0, down: 0, up: 0, ping: 0, jitter: 0,
-    samples: [], probes: [], startedAt: 0, endedAt: 0,
+    samples: [], probes: [],
   };
 
   // per-transfer-phase internals
   private phaseStart = 0;
   private totalBytes = 0; // download path accumulates here
   private counter: ByteCounter | null = null; // upload path polls this
+  private stopUpload: (() => void) | null = null;
   private deque: { t: number; b: number }[] = [];
   private stableRuns = 0;
   private minMs = DL_MIN_MS;
@@ -112,7 +108,7 @@ export class SpeedTest {
     return () => this.tickers.delete(fn);
   };
 
-  start = (streams: number): void => {
+  start = (): void => {
     if (this.running) return;
     this.stopTicker();
     this.loaded.stop();
@@ -126,14 +122,13 @@ export class SpeedTest {
       ping: 0,
       jitter: 0,
       probes: [],
-      startedAt: performance.now(),
-      endedAt: 0,
     });
     this.live.samples = [];
-    this.snap = { ...this.snap, streams, error: null, result: null, pop: null };
-    this.ctl = new AbortController();
+    this.snap = { ...this.snap, error: null, result: null, pop: null, shared: false };
+    this.runCtl = new AbortController();
+    this.ctl = this.runCtl;
     this.setPhase('latency');
-    void this.run(this.ctl, streams);
+    void this.run(this.runCtl);
   };
 
   abort = (): void => {
@@ -143,24 +138,29 @@ export class SpeedTest {
     this.stopTicker();
     this.loaded.stop();
     this.ctl?.abort();
+    this.runCtl?.abort();
   };
 
   /** Render a shared link's result without running anything. */
   loadShared = (result: TestResult): void => {
     if (this.running) return;
+    this.live.samples = [];
+    this.live.probes = [];
     Object.assign(this.live, {
+      instant: 0,
+      progress: 1,
       down: result.downMbps,
       up: result.upMbps,
       ping: result.pingMs,
       jitter: result.jitterMs,
     });
-    this.snap = { ...this.snap, result, pop: result.pop };
+    this.snap = { ...this.snap, error: null, result, pop: result.pop, shared: true };
     this.setPhase('done');
   };
 
   // ------------------------------------------------------------------
 
-  private async run(ctl: AbortController, streams: number): Promise<void> {
+  private async run(ctl: AbortController): Promise<void> {
     try {
       const idle = await measureIdle(ctl.signal);
       if (this.checkUserAbort()) return;
@@ -172,6 +172,8 @@ export class SpeedTest {
           colo: idle.colo,
           city: idle.city,
           country: idle.country,
+          lat: idle.lat,
+          lon: idle.lon,
           isp: idle.isp,
           asn: idle.asn,
           ip: idle.ip,
@@ -185,7 +187,6 @@ export class SpeedTest {
       this.beginTransfer('d', DL_MIN_MS, DL_CAP_MS);
       await this.settle(
         runDownload({
-          streams,
           // bind to the PER-PHASE controller — the ticker's natural stop
           // aborts this one, not the outer controller from start()
           signal: this.ctl!.signal,
@@ -193,26 +194,19 @@ export class SpeedTest {
             this.totalBytes += n;
           },
         }),
+        this.ctl!.signal,
       );
       this.live.down = this.finalizeTransfer();
       if (this.checkUserAbort()) return;
 
       // ---- upload ----
       this.beginTransfer('u', UL_MIN_MS, UL_CAP_MS);
-      const streaming = supportsStreamingUpload();
-      await this.settle(this.uploadOnce(streaming, streams));
+      await this.settle(this.uploadOnce(), this.ctl!.signal);
       this.live.up = this.finalizeTransfer();
       if (this.checkUserAbort()) return;
-      let uploadMode: 'stream' | 'blob' = streaming ? 'stream' : 'blob';
-      if (streaming && this.live.up < 0.05) {
-        // Streaming path produced nothing (VPN/proxy/browser quirks can
-        // starve duplex streams). Discard its samples, rerun with blob POSTs.
-        uploadMode = 'blob';
-        this.beginTransfer('u', UL_MIN_MS, UL_CAP_MS);
-        await this.settle(this.uploadOnce(false, streams));
-        this.live.up = this.finalizeTransfer();
-      }
       this.loaded.stop();
+      ctl.abort(); // cancel any loaded-latency probe still in flight
+      this.live.probes = this.loaded.marks();
 
       // ---- record ----
       const bloat = this.loaded.bloatMs(idle.medianMs);
@@ -222,10 +216,10 @@ export class SpeedTest {
         pingMs: idle.medianMs,
         jitterMs: idle.jitterMs,
         bloatMs: bloat,
-        bloatGrade: bloatGrade(bloat),
-        streams,
-        uploadMode,
-        pop: this.snap.pop ?? { colo: '', city: '', country: '', isp: '', asn: 0, ip: '' },
+        bloatGrade: bloat === null ? '—' : bloatGrade(bloat),
+        streams: STREAM_COUNT,
+        uploadMode: 'blob',
+        pop: this.snap.pop ?? { colo: '', city: '', country: '', lat: null, lon: null, isp: '', asn: 0, ip: '' },
         finishedAt: Date.now(),
       };
       addHistory(result);
@@ -234,12 +228,13 @@ export class SpeedTest {
     } catch (err) {
       this.stopTicker();
       this.loaded.stop();
-      // Intended stops (user abort, or the ticker's natural abort where any
-      // secondary stream failures are just wind-down noise) are not errors.
-      const failed = !this.naturalStop && !this.userAborted && !isAbortErr(err);
+      ctl.abort();
+      this.ctl?.abort();
+      const failed = !this.userAborted;
+      if (failed) console.error('Speed test failed', err);
       this.snap = {
         ...this.snap,
-        error: failed ? 'CONNECTION FAILED — CHECK NETWORK' : null,
+        error: failed ? `${this.snap.phase.toUpperCase()} FAILED — CHECK NETWORK` : null,
       };
       this.setPhase('aborted');
     }
@@ -255,28 +250,30 @@ export class SpeedTest {
   }
 
   /** swallow the AbortError that a natural stop produces */
-  private async settle(p: Promise<void>): Promise<void> {
+  private async settle(p: Promise<void>, signal: AbortSignal): Promise<void> {
     try {
       await p;
     } catch (err) {
-      if (!(err instanceof Error && err.name === 'AbortError' && this.naturalStop)) throw err;
+      if (!(isAbortErr(err) && this.naturalStop && signal.aborted)) throw err;
     }
   }
 
-  private uploadOnce(streaming: boolean, streams: number): Promise<void> {
-    const run = streaming
-      ? startUploadStreaming({ streams, signal: this.ctl!.signal })
-      : startUploadBlob({ streams, signal: this.ctl!.signal });
+  private uploadOnce(): Promise<void> {
+    const run = startUploadBlob({ signal: this.ctl!.signal });
     this.counter = run.counter;
+    this.stopUpload = run.stop;
     return run.promise;
   }
 
   private beginTransfer(kind: 'd' | 'u', minMs: number, capMs: number): void {
+    this.stopTicker();
+    this.naturalStop = false;
     this.kind = kind;
     this.minMs = minMs;
     this.capMs = capMs;
     this.totalBytes = 0;
     this.counter = null;
+    this.stopUpload = null;
     this.deque = [];
     this.stableRuns = 0;
     this.live.instant = 0;
@@ -292,7 +289,7 @@ export class SpeedTest {
   private tick(): void {
     const now = performance.now();
     const elapsed = now - this.phaseStart;
-    const total = this.kind === 'd' ? this.totalBytes : (this.counter?.total(now) ?? 0);
+    const total = this.kind === 'd' ? this.totalBytes : (this.counter?.total() ?? 0);
 
     this.deque.push({ t: now, b: total });
     while (this.deque.length > 2 && now - this.deque[0].t > ROLLING_MS) this.deque.shift();
@@ -302,7 +299,7 @@ export class SpeedTest {
     this.live.instant = span >= 150 ? ((total - first.b) * 8) / (span * 1000) : 0;
 
     if (elapsed >= WARMUP_MS) {
-      this.live.samples.push({ t: elapsed / 1000, v: this.live.instant, k: this.kind });
+      this.live.samples.push({ t: elapsed / 1000, at: now, v: this.live.instant, k: this.kind });
     }
 
     if (elapsed >= this.minMs) {
@@ -313,7 +310,8 @@ export class SpeedTest {
       if (this.stableRuns >= STABLE_WINDOWS_NEEDED || elapsed >= this.capMs) {
         this.stopTicker();
         this.naturalStop = true;
-        this.ctl?.abort();
+        if (this.kind === 'u') this.stopUpload?.();
+        else this.ctl?.abort();
       }
     }
 
@@ -336,9 +334,6 @@ export class SpeedTest {
   }
 
   private setPhase(phase: Phase): void {
-    if (!RUNNING.has(phase) && this.live.endedAt === 0) {
-      this.live.endedAt = performance.now();
-    }
     this.snap = { ...this.snap, phase };
     this.emit();
   }

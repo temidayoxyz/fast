@@ -3,6 +3,8 @@
 export interface Sample {
   /** seconds since phase start */
   t: number;
+  /** absolute performance.now timestamp for graph alignment */
+  at: number;
   /** Mbps at this tick */
   v: number;
   /** which transfer produced it */

@@ -10,7 +10,7 @@ export const jitterTile = (live: Live): string =>
 
 export const bloatTile = (_live: Live, snap: Snapshot): string => {
   const r = snap.result;
-  if (r) return `${r.bloatGrade} · ${Math.round(r.bloatMs)} ms`;
+  if (r) return r.bloatMs === null ? '—' : `${r.bloatGrade} · ${Math.round(r.bloatMs)} ms`;
   return speedTest.running ? '···' : '—';
 };
 
@@ -38,11 +38,11 @@ export function MetricTile(props: {
   }, [props.format]);
 
   return (
-    <div className="border border-graphite/60 bg-carbon px-3 sm:px-4 py-2.5 sm:py-3 min-w-0">
-      <div className="text-[9px] sm:text-[10px] tracking-[0.22em] text-ash">{props.label}</div>
+    <div className="border border-graphite bg-panel px-3 py-3 sm:px-4 sm:py-4 min-w-0">
+      <div className="font-mono text-[9px] sm:text-[10px] tracking-[0.12em] text-ash">{props.label}</div>
       <div
         ref={ref}
-        className="mt-1 font-display font-medium tabular-nums truncate text-base sm:text-xl"
+        className="mt-2 font-display font-semibold tabular-nums truncate text-base sm:text-2xl"
       >
         —
       </div>

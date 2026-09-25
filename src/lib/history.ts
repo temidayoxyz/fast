@@ -1,8 +1,11 @@
 // Run history in localStorage — the "database" is the browser. Capped at 20.
 
 import type { TestResult } from '../engine/engine';
+import { isLocalPreview } from './environment';
 
-const KEY = 'fastxyz.history.v1';
+// Older localhost entries were loopback diagnostics, not internet tests.
+// Keep them stored but start a separate history for genuine preview tests.
+const KEY = isLocalPreview() ? 'fastxyz.history.internet.v2' : 'fastxyz.history.v1';
 const CAP = 20;
 
 export interface HistoryEntry {

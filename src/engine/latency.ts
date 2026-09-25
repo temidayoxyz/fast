@@ -2,11 +2,14 @@
 // deliberately queueing behind traffic — that queueing IS bufferbloat).
 
 import { meanAbsDelta, median } from './stats';
+import { latencyUrl, publicPreview } from '../lib/test-target';
 
 export interface PopInfo {
   colo: string;
   city: string;
   country: string;
+  lat: number | null;
+  lon: number | null;
   isp: string;
   asn: number;
   ip: string;
@@ -21,19 +24,32 @@ const PROBE_COUNT = 12;
 
 export async function measureIdle(signal: AbortSignal): Promise<IdleResult> {
   const rtts: number[] = [];
-  let info: PopInfo = { colo: '', city: '', country: '', isp: '', asn: 0, ip: '' };
+  let info: PopInfo = { colo: '', city: '', country: '', lat: null, lon: null, isp: '', asn: 0, ip: '' };
 
   for (let i = 0; i < PROBE_COUNT && !signal.aborted; i++) {
     const t0 = performance.now();
-    const res = await fetch(`/api/latency?t=${Math.random()}`, {
+    const res = await fetch(latencyUrl(), {
       cache: 'no-store',
       signal,
     });
-    const j = (await res.json()) as PopInfo; // drain — TTFB alone understates
+    if (!res.ok) throw new Error(`Latency probe returned HTTP ${res.status}`);
+    const j = publicPreview ? null : (await res.json()) as PopInfo;
+    if (publicPreview) {
+      await res.arrayBuffer(); // Cloudflare's zero-byte response still needs draining
+      info.ip ||= res.headers.get('cf-meta-ip') ?? '';
+    }
     const rtt = performance.now() - t0;
     if (i === 0) continue; // first probe warms the connection; discard
     rtts.push(rtt);
-    if (!info.colo) info = j;
+    if (j && !info.colo) info = j;
+  }
+  if (publicPreview && !signal.aborted) {
+    try {
+      const res = await fetch('/api/preview-meta', { cache: 'no-store', signal });
+      if (res.ok) info = { ...info, ...(await res.json()) as PopInfo };
+    } catch {
+      // Throughput and latency remain valid if optional location metadata fails.
+    }
   }
   return { medianMs: median(rtts), jitterMs: meanAbsDelta(rtts), ...info };
 }
@@ -47,7 +63,9 @@ export class LoadedProbes {
     const fire = async (): Promise<void> => {
       const t0 = performance.now();
       try {
-        await fetch(`/api/latency?t=${Math.random()}`, { cache: 'no-store', signal });
+        const res = await fetch(latencyUrl(), { cache: 'no-store', signal });
+        if (!res.ok) return;
+        await res.arrayBuffer(); // measure the same full response as idle latency
         this.entries.push({ at: t0, ms: performance.now() - t0 });
       } catch {
         /* aborted mid-probe */
@@ -65,9 +83,9 @@ export class LoadedProbes {
     return [...this.entries];
   }
 
-  /** bufferbloat = median(loaded) − median(idle), floored at 0 */
-  bloatMs(idleMedianMs: number): number {
+  /** Null means there were too few successful probes to grade the connection. */
+  bloatMs(idleMedianMs: number): number | null {
     const ms = this.entries.map((e) => e.ms);
-    return ms.length >= 4 ? Math.max(0, median(ms) - idleMedianMs) : 0;
+    return ms.length >= 4 ? Math.max(0, median(ms) - idleMedianMs) : null;
   }
 }

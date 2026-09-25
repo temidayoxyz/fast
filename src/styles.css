@@ -5,14 +5,16 @@
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/600.css';
 
-/* Fast XYZ design tokens — pure grayscale instrument palette.
-   State is encoded by weight/inversion/position, never hue. */
+/* FAST XYZ: neutral instrument surfaces, with direction-specific signal colors. */
 @theme {
-  --color-void: #060606;
-  --color-carbon: #111111;
-  --color-graphite: #2a2a2a;
-  --color-ash: #8a8a8a;
-  --color-signal: #f5f5f5;
+  --color-void: #0c0f13;
+  --color-panel: #15191f;
+  --color-carbon: #171c22;
+  --color-graphite: #353c45;
+  --color-ash: #9da6b2;
+  --color-signal: #f1f3f6;
+  --color-down: #ff9f53;
+  --color-up: #bca8ff;
 
   --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
@@ -27,17 +29,21 @@ body {
   min-height: 100dvh;
   background: var(--color-void);
   color: var(--color-signal);
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
 }
 
 ::selection {
-  background: var(--color-signal);
+  background: var(--color-down);
   color: var(--color-void);
 }
 
 :focus-visible {
   outline: 1px solid var(--color-signal);
   outline-offset: 3px;
+}
+
+.server-map {
+  display: block;
 }

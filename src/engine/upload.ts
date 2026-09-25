@@ -1,49 +1,23 @@
-// Upload measurement — dual mode:
-//
-//  A) blob POST (all browsers): K workers looping fixed-size random-blob
-//     POSTs. Bytes are attributed linearly across each POST's lifetime so
-//     the live curve is smooth; attribution is exact in aggregate because
-//     every byte is eventually credited.
-//  B) streaming POST (Chromium): fetch(duplex:'half') with a pull-based
-//     ReadableStream — backpressure makes `pull` fire at socket-drain rate,
-//     giving a native high-resolution sent-bytes signal.
-//
-// Feature detection follows the documented Chromium idiom: a real
-// implementation reads `duplex` and refuses to infer Content-Type from a
-// stream body; pretenders never touch the accessor.
+// Upload measurement: repeated random-blob POSTs with native XHR upload
+// progress. The browser reports bytes sent, and the worker confirms each
+// completed request's byte count.
 
-import { isAbortErr, mean } from './stats';
+import { isAbortErr } from './stats';
+import { publicPreview, uploadUrl } from '../lib/test-target';
 
 const MAX_FAILURES = 3;
 
-const STREAM_CHUNK = 1 << 20; // 1 MiB per streamed chunk
-const PAYLOAD_SIZE = 16 << 20; // 16 MiB per blob POST (under the 100 MB cap)
+const PAYLOAD_SIZE = 2 << 20; // short requests can finish cleanly when sampling ends
 
 export interface ByteCounter {
-  /** cumulative attributed bytes at time `nowMs` (performance.now clock) */
-  total(nowMs: number): number;
+  /** Cumulative bytes reported by browser upload progress. */
+  total(): number;
 }
 
 export interface UploadRun {
   promise: Promise<void>;
   counter: ByteCounter;
-}
-
-export function supportsStreamingUpload(): boolean {
-  try {
-    let duplexSeen = false;
-    const req = new Request('', {
-      method: 'POST',
-      body: new ReadableStream(),
-      get duplex() {
-        duplexSeen = true;
-        return 'half';
-      },
-    } as RequestInit);
-    return duplexSeen && !req.headers.has('content-type');
-  } catch {
-    return false;
-  }
+  stop: () => void;
 }
 
 function randomPayload(size: number): Uint8Array<ArrayBuffer> {
@@ -54,55 +28,8 @@ function randomPayload(size: number): Uint8Array<ArrayBuffer> {
   return buf;
 }
 
-/** Mode B — Chromium streaming POST. */
-export function startUploadStreaming(opts: {
-  streams: number;
-  signal: AbortSignal;
-}): UploadRun {
-  let sent = 0;
-  const tpl = randomPayload(STREAM_CHUNK);
-
-  const makeBody = () =>
-    new ReadableStream<Uint8Array>({
-      pull(ctrl) {
-        if (opts.signal.aborted) {
-          ctrl.close();
-          return;
-        }
-        ctrl.enqueue(tpl.slice());
-        sent += STREAM_CHUNK;
-      },
-    });
-
-  const worker = async (): Promise<void> => {
-    let failures = 0;
-    while (!opts.signal.aborted) {
-      try {
-        await fetch('/api/upload', {
-          method: 'POST',
-          body: makeBody(),
-          duplex: 'half',
-          signal: opts.signal,
-          headers: { 'content-type': 'application/octet-stream' },
-        } as RequestInit);
-        failures = 0;
-      } catch (err) {
-        if (opts.signal.aborted || isAbortErr(err)) throw err;
-        if (++failures > MAX_FAILURES) throw err;
-        await new Promise((r) => setTimeout(r, 250 * failures));
-      }
-    }
-  };
-
-  return {
-    promise: Promise.all(Array.from({ length: opts.streams }, () => worker())).then(),
-    counter: { total: () => sent },
-  };
-}
-
-/** Mode A — concurrent fixed-size blob POSTs, works everywhere. */
+/** Concurrent fixed-size blob POSTs with actual browser upload progress. */
 export function startUploadBlob(opts: {
-  streams: number;
   signal: AbortSignal;
 }): UploadRun {
   const payload = new Blob([randomPayload(PAYLOAD_SIZE)], {
@@ -110,55 +37,87 @@ export function startUploadBlob(opts: {
   });
 
   interface Job {
-    start: number;
-    done: boolean;
+    loaded: number;
   }
-  const jobs: Job[] = [];
-  const rates: number[] = [];
-  // Pre-first-completion attribution guess; the warm-up discard hides it.
-  let rate = PAYLOAD_SIZE / 1500;
+  const jobs = new Set<Job>();
+  let transferred = 0;
+  let stopping = false;
+
+  const post = (): Promise<void> => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const job: Job = { loaded: 0 };
+    jobs.add(job);
+    let settled = false;
+
+    const finish = (err?: Error): void => {
+      if (settled) return;
+      settled = true;
+      opts.signal.removeEventListener('abort', onAbort);
+      transferred += job.loaded;
+      jobs.delete(job);
+      if (err) reject(err);
+      else resolve();
+    };
+    const onAbort = (): void => xhr.abort();
+
+    xhr.upload.onprogress = (event) => {
+      job.loaded = Math.min(PAYLOAD_SIZE, event.loaded);
+    };
+    xhr.onerror = () => finish(new Error('Network error during upload'));
+    xhr.ontimeout = () => finish(new Error('Upload timed out'));
+    xhr.onabort = () => finish(new DOMException('Upload aborted', 'AbortError'));
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        finish(new Error(`Upload returned HTTP ${xhr.status}`));
+        return;
+      }
+      try {
+        if (!publicPreview) {
+          const body = JSON.parse(xhr.responseText) as { bytes?: unknown };
+          if (body.bytes !== PAYLOAD_SIZE) throw new Error('Upload byte count mismatch');
+        }
+        job.loaded = PAYLOAD_SIZE;
+        finish();
+      } catch (err) {
+        finish(err instanceof Error ? err : new Error('Invalid upload response'));
+      }
+    };
+
+    if (opts.signal.aborted) {
+      finish(new DOMException('Upload aborted', 'AbortError'));
+      return;
+    }
+    opts.signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      xhr.open('POST', uploadUrl());
+      xhr.timeout = 20000;
+      xhr.setRequestHeader('content-type', 'application/octet-stream');
+      xhr.send(payload);
+    } catch (err) {
+      finish(err instanceof Error ? err : new Error('Unable to start upload'));
+    }
+  });
 
   const worker = async (): Promise<void> => {
     let failures = 0;
-    while (!opts.signal.aborted) {
-      const job: Job = { start: performance.now(), done: false };
-      jobs.push(job);
+    while (!opts.signal.aborted && !stopping) {
       try {
-        await fetch('/api/upload', {
-          method: 'POST',
-          body: payload,
-          signal: opts.signal,
-          cache: 'no-store',
-          headers: { 'content-type': 'application/octet-stream' },
-        });
+        await post();
       } catch (err) {
-        // freeze partial attribution for the dead job, then retry — bytes
-        // already sent stay credited, so the curve never jumps backwards
-        job.done = true;
         if (opts.signal.aborted || isAbortErr(err)) throw err;
         if (++failures > MAX_FAILURES) throw err;
         await new Promise((r) => setTimeout(r, 250 * failures));
         continue;
       }
-      job.done = true;
-      rates.push(PAYLOAD_SIZE / (performance.now() - job.start));
-      rate = mean(rates);
       failures = 0;
     }
   };
 
   return {
-    promise: Promise.all(Array.from({ length: opts.streams }, () => worker())).then(),
+    promise: worker(),
+    stop: () => { stopping = true; },
     counter: {
-      total(nowMs: number): number {
-        let t = 0;
-        for (const j of jobs) {
-          t += j.done
-            ? PAYLOAD_SIZE
-            : Math.min(PAYLOAD_SIZE, Math.max(0, nowMs - j.start) * rate);
-        }
-        return t;
-      },
+      total: () => transferred + [...jobs].reduce((sum, job) => sum + job.loaded, 0),
     },
   };
 }

@@ -1,20 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { speedTest, type Phase } from '../engine/engine';
+import { speedTest } from '../engine/engine';
 import { autoParts } from '../lib/units';
 
-const DIRECTION: Partial<Record<Phase, string>> = {
-  latency: '·',
-  download: '↓',
-  upload: '↑',
-};
-
-/**
- * The giant numeral — plain DOM updated via ref (crisper than canvas text,
- * zero React churn). Units are adaptive: KB/s when slow, MB/s when fast;
- * the label always says which, so there is nothing to toggle.
- */
-export function BigReadout() {
-  const num = useRef<HTMLDivElement>(null);
+/** The readout follows its own transfer, then holds the completed value. */
+export function BigReadout({ kind }: { kind: 'd' | 'u' }) {
+  const num = useRef<HTMLSpanElement>(null);
   const unit = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -22,41 +12,27 @@ export function BigReadout() {
       if (!num.current || !unit.current) return;
       const live = speedTest.live;
       const phase = speedTest.getSnapshot().phase;
-      const value =
-        phase === 'done'
-          ? live.down
-          : phase === 'download' || phase === 'upload'
-            ? live.instant
-            : NaN; // idle / latency / aborted → resting zero
-      const has = Number.isFinite(value) && value > 0;
-      const parts = autoParts(has ? value : 0);
+      const finished = kind === 'd' ? live.down : live.up;
+      const active = phase === (kind === 'd' ? 'download' : 'upload');
+      const parts = autoParts(active ? live.instant : finished);
       num.current.textContent = parts.num;
-      num.current.style.color = has ? 'var(--color-signal)' : 'rgba(138, 138, 138, 0.45)';
-      unit.current.textContent = `${parts.label} ${DIRECTION[phase] ?? ''}`;
+      unit.current.textContent = parts.label;
     };
     paint();
-    // coarse subscription makes the numeral switch to the final download
-    // score on `done` — the tick channel alone stops before that repaint
     const offTick = speedTest.onTick(paint);
     const offCoarse = speedTest.subscribe(paint);
     return () => {
       offTick();
       offCoarse();
     };
-  }, []);
+  }, [kind]);
 
   return (
-    <div className="flex flex-col items-center select-none">
-      <div
-        ref={num}
-        aria-hidden="true"
-        className="font-display font-bold tabular-nums leading-[0.95] tracking-tight text-[clamp(64px,17vw,168px)]"
-      >
+    <div className="flex items-baseline gap-2 tabular-nums" aria-label={`${kind === 'd' ? 'Download' : 'Upload'} speed`}>
+      <span ref={num} className={`font-display font-bold leading-none tracking-[-0.06em] text-[clamp(52px,7vw,82px)] ${kind === 'd' ? 'text-down' : 'text-up'}`}>
         0.0
-      </div>
-      <span ref={unit} className="mt-1.5 text-[11px] tracking-[0.26em] text-ash">
-        MB/s
       </span>
+      <span ref={unit} className="text-base sm:text-lg text-ash">Mbps</span>
     </div>
   );
 }

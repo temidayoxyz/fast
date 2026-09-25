@@ -1,23 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { speedTest, type Live, type Phase } from '../engine/engine';
+import { speedTest, type Live } from '../engine/engine';
 import type { Sample } from '../engine/stats';
 
-const HEIGHT = 120;
-const WINDOW = 300; // visible samples (~30 s at 10 Hz), scrolling right-to-left
+const HEIGHT = 104;
+const WINDOW = 300;
+const COLORS = { d: '#ff9f53', u: '#bca8ff' } as const;
 
-const SIGNAL = '#f5f5f5';
-const ASH = '#8a8a8a';
-const GRID = 'rgba(42, 42, 42, 0.55)';
-
-/**
- * The signature element: a live throughput oscilloscope. Hairline graticule,
- * signal trace scrolling at sample rate, loaded-latency probe marks along the
- * bottom edge. Freezes into a permanent record when the test ends.
- *
- * Redraws are dirty-key driven (phase + sample count) — nothing animates that
- * isn't data, and prefers-reduced-motion is respected for free.
- */
-export function GraphCanvas() {
+/** Separate live traces keep download and upload easy to scan. */
+export function GraphCanvas({ kind }: { kind: 'd' | 'u' }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -25,130 +15,103 @@ export function GraphCanvas() {
     const ctx = canvas.getContext('2d')!;
     let lastKey = '';
     let raf = 0;
-
     const loop = (): void => {
       const live = speedTest.live;
-      const key = `${speedTest.getSnapshot().phase}:${live.samples.length}:${live.probes.length}`;
+      const key = `${speedTest.getSnapshot().phase}:${live.samples.length}:${live.probes.length}:${canvas.clientWidth}:${window.devicePixelRatio}`;
       if (key !== lastKey) {
         lastKey = key;
-        render(ctx, canvas, live, speedTest.getSnapshot().phase);
+        render(ctx, canvas, live, kind);
       }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [kind]);
 
   return (
     <canvas
       ref={ref}
       style={{ height: HEIGHT }}
-      className="w-full block"
-      aria-label="throughput over time"
+      className="block w-full"
+      aria-label={`${kind === 'd' ? 'Download' : 'Upload'} throughput over time`}
     />
   );
 }
 
-function render(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, live: Live, phase: Phase): void {
+function render(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, live: Live, kind: 'd' | 'u'): void {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
-  if (canvas.width !== Math.round(w * dpr)) {
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-
-  // graticule
-  ctx.strokeStyle = GRID;
+  ctx.strokeStyle = 'rgba(135, 146, 160, 0.16)';
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let x = 28; x < w; x += 28) {
-    ctx.moveTo(x + 0.5, 0);
-    ctx.lineTo(x + 0.5, h);
+  for (const f of [0.25, 0.5, 0.75, 1]) {
+    const y = Math.round(h * f) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
   }
-  for (const f of [0.25, 0.5, 0.75]) {
-    ctx.moveTo(0, Math.round(h * f) + 0.5);
-    ctx.lineTo(w, Math.round(h * f) + 0.5);
-  }
-  ctx.stroke();
 
-  const samples = live.samples.slice(-WINDOW);
-  if (samples.length >= 2) drawTrace(ctx, w, h, samples);
-
-  drawProbeMarks(ctx, w, h, live, phase);
+  const samples = live.samples.filter((sample) => sample.k === kind).slice(-WINDOW);
+  if (samples.length < 2) return;
+  const start = samples[0].at;
+  const end = samples.at(-1)!.at;
+  const xAt = (at: number): number => ((at - start) / Math.max(end - start, 1)) * w;
+  drawTrace(ctx, h, samples, xAt, COLORS[kind]);
+  drawProbeMarks(ctx, w, h, live.probes, start, end, xAt);
 }
 
-function drawTrace(ctx: CanvasRenderingContext2D, w: number, h: number, visible: Sample[]): void {
-  const maxV = Math.max(1, ...visible.map((s) => s.v)) * 1.15;
-  // oscilloscope sweep: left→right, stretching to fill the width as the
-  // record grows — legible for short tests, full-width when frozen
-  const xAt = (i: number): number => (i / Math.max(1, visible.length - 1)) * w;
-  const yAt = (v: number): number => h - 8 - (v / maxV) * (h - 16);
-
-  // area fill
+function drawTrace(
+  ctx: CanvasRenderingContext2D,
+  h: number,
+  samples: Sample[],
+  xAt: (at: number) => number,
+  color: string,
+): void {
+  const max = Math.max(1, ...samples.map((sample) => sample.v)) * 1.12;
+  const yAt = (v: number): number => h - 3 - (v / max) * (h - 13);
+  const gradient = ctx.createLinearGradient(0, 0, 0, h);
+  gradient.addColorStop(0, `${color}70`);
+  gradient.addColorStop(1, `${color}06`);
   ctx.beginPath();
-  ctx.moveTo(xAt(0), h - 8);
-  visible.forEach((s, i) => ctx.lineTo(xAt(i), yAt(s.v)));
-  ctx.lineTo(xAt(visible.length - 1), h - 8);
+  ctx.moveTo(xAt(samples[0].at), h);
+  for (const sample of samples) ctx.lineTo(xAt(sample.at), yAt(sample.v));
+  ctx.lineTo(xAt(samples.at(-1)!.at), h);
   ctx.closePath();
-  ctx.fillStyle = 'rgba(245, 245, 245, 0.05)';
+  ctx.fillStyle = gradient;
   ctx.fill();
 
-  // signal stroke
   ctx.beginPath();
-  visible.forEach((s, i) => (i === 0 ? ctx.moveTo(xAt(i), yAt(s.v)) : ctx.lineTo(xAt(i), yAt(s.v))));
-  ctx.strokeStyle = SIGNAL;
+  for (const [index, sample] of samples.entries()) {
+    if (index === 0) ctx.moveTo(xAt(sample.at), yAt(sample.v));
+    else ctx.lineTo(xAt(sample.at), yAt(sample.v));
+  }
+  ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.stroke();
-
-  // DL/UL segment labels + divider at the phase boundary
-  const firstU = visible.findIndex((s) => s.k === 'u');
-  ctx.font = '9px "IBM Plex Mono", monospace';
-  ctx.fillStyle = ASH;
-  if (firstU > 0) {
-    const bx = xAt(firstU);
-    ctx.strokeStyle = GRID;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(bx + 0.5, 4);
-    ctx.lineTo(bx + 0.5, h - 4);
-    ctx.stroke();
-    ctx.fillText('UL', Math.min(bx + 6, w - 18), 12);
-    ctx.fillText('DL', Math.max(xAt(0), 2), 12);
-  } else {
-    ctx.fillText('DL', Math.max(xAt(0), 2), 12);
-  }
 }
 
 function drawProbeMarks(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
-  live: Live,
-  phase: Phase,
+  probes: Live['probes'],
+  start: number,
+  end: number,
+  xAt: (at: number) => number,
 ): void {
-  if (!live.startedAt || !live.probes.length) return;
-  const end = live.endedAt || performance.now();
-  const span = end - live.startedAt;
-  if (span <= 0) return;
-
-  for (const p of live.probes) {
-    const x = ((p.at - live.startedAt) / span) * w;
-    if (x < 0 || x > w) continue;
-    // brightness scales with queueing penalty above idle baseline
-    const penalty = p.ms - Math.max(live.ping, 1);
-    const a = Math.min(0.9, Math.max(0.18, penalty / 60));
-    ctx.fillStyle = penalty > 100 ? `rgba(245,245,245,${a})` : `rgba(138,138,138,${a})`;
-    ctx.fillRect(Math.round(x), h - 6, 1, 4);
-  }
-
-  if (phase !== 'done') {
-    ctx.font = '9px "IBM Plex Mono", monospace';
-    ctx.fillStyle = ASH;
-    ctx.fillText('LOADED LATENCY', 2, h - 10);
+  ctx.fillStyle = 'rgba(235, 240, 245, 0.55)';
+  for (const probe of probes) {
+    if (probe.at < start || probe.at > end) continue;
+    const x = Math.round(xAt(probe.at));
+    if (x >= 0 && x <= w) ctx.fillRect(x, h - 5, 2, 4);
   }
 }

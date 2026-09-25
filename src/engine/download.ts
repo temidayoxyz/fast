@@ -1,4 +1,4 @@
-// Download measurement: N parallel streams pulling random-byte blobs,
+// Download measurement: one connection pulling a random-byte blob,
 // counting wire bytes via ReadableStream. Runs until aborted — the engine's
 // ticker decides when the stability rule has been satisfied.
 //
@@ -6,22 +6,19 @@
 // with backoff; only aborts (intended stops) and exhausted retries propagate.
 
 import { isAbortErr } from './stats';
+import { downloadUrl } from '../lib/test-target';
 
-const BLOB_COUNT = 6; // matches scripts/generate-blobs.mjs
 const MAX_FAILURES = 3;
 
 export async function runDownload(opts: {
-  streams: number;
   signal: AbortSignal;
   onBytes: (delta: number) => void;
 }): Promise<void> {
-  const worker = async (i: number): Promise<void> => {
-    // One dedicated file per stream so parallel connections never share a URL.
-    const url = `/blobs/blob-${i % BLOB_COUNT}.bin`;
+  const worker = async (): Promise<void> => {
     let failures = 0;
     while (!opts.signal.aborted) {
       try {
-        const res = await fetch(url, { cache: 'no-store', signal: opts.signal });
+        const res = await fetch(downloadUrl(), { cache: 'no-store', signal: opts.signal });
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
         const reader = res.body.getReader();
         for (;;) {
@@ -38,5 +35,5 @@ export async function runDownload(opts: {
     }
   };
 
-  await Promise.all(Array.from({ length: opts.streams }, (_, i) => worker(i)));
+  await worker();
 }
