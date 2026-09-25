@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "blobs": "node scripts/generate-blobs.mjs",
-    "prebuild": "npm run blobs",
+    "prebuild": "npm run blobs && npm run map",
+    "map": "node scripts/generate-map.mjs",
     "build": "vite build",
     "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json",
     "preview": "npm run build && wrangler dev",
