@@ -20,7 +20,7 @@ export function Controls(props: {
     <div>
       <button
         onClick={props.running ? props.onAbort : props.onStart}
-        className={`h-11 w-full min-w-36 px-6 text-xs tracking-[0.12em] font-semibold cursor-pointer transition-colors border sm:w-auto ${
+        className={`h-11 w-full min-w-36 px-6 text-xs tracking-[0.12em] font-semibold cursor-pointer transition-colors border lg:w-auto ${
           props.running
             ? 'border-signal text-signal bg-transparent hover:bg-panel'
             : 'bg-signal text-void border-transparent hover:bg-white'

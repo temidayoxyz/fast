@@ -63,18 +63,28 @@ export default function App() {
               <p className={`mt-2 text-sm ${snap.error ? 'text-down' : 'text-ash'}`} role="status">{status}</p>
             )}
           </div>
-          <Controls
-            running={speedTest.running}
-            phase={snap.phase}
-            onStart={start}
-            onAbort={() => speedTest.abort()}
-          />
+          <div className="hidden lg:block">
+            <Controls
+              running={speedTest.running}
+              phase={snap.phase}
+              onStart={start}
+              onAbort={() => speedTest.abort()}
+            />
+          </div>
         </div>
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.9fr)]">
           <div className="min-w-0 space-y-4">
             <TransferPanel kind="d" phase={snap.phase} />
             <TransferPanel kind="u" phase={snap.phase} />
+            <div className="lg:hidden">
+              <Controls
+                running={speedTest.running}
+                phase={snap.phase}
+                onStart={start}
+                onAbort={() => speedTest.abort()}
+              />
+            </div>
             <section aria-labelledby="response-title">
               <div className="mb-3 flex items-baseline justify-between gap-3">
                 <h2 id="response-title" className="font-display text-lg font-semibold">Response time</h2>
