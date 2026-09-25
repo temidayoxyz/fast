@@ -1,9 +1,7 @@
 # FAST XYZ
 
-A monochrome internet speed instrument. Single Cloudflare Worker, zero backend
-state, **15 KB of JavaScript** (gzipped, everything included).
-
-![Fast XYZ](docs/screenshot.png)
+A compact internet speed instrument. Single Cloudflare Worker, zero backend
+state, about **26 KB of JavaScript** gzipped.
 
 ## Why
 
@@ -15,15 +13,34 @@ analytics, no framework bloat — just the measurement.
 
 | Metric | Method |
 | --- | --- |
-| **Downlink** | 1/3/6 parallel streams pulling incompressible 24 MiB blobs, byte-counted via `ReadableStream` |
-| **Uplink** | Concurrent 16 MiB random-blob POSTs (everywhere) or `duplex:'half'` request streaming (Chromium), auto-detected |
+| **Downlink** | One connection pulling 24 MiB test data, byte-counted via `ReadableStream` |
+| **Uplink** | One connection sending repeated 2 MiB random-blob POSTs, counted via browser upload progress; the deployed Worker also checks each completed byte count |
 | **Latency / jitter** | 12 sequential probes, median + mean absolute delta |
 | **Bufferbloat** | Probes fired *during* transfer; graded A–F against the idle baseline |
-| **Edge PoP** | Reported from `request.cf` — you always know which colo you measured |
+| **Edge PoP** | The deployed Worker reports its colo from `request.cf`; localhost uses Cloudflare's public speed-test edge metadata |
 
-The throughput trace is a real oscilloscope record: it scrolls live and freezes
-into the final readout. Loaded-latency probe marks are drawn along the bottom
-edge, brightness scaled by queueing penalty.
+The server map plots the visitor's approximate area and the reported Cloudflare
+colo at approximate airport coordinates. It supports drag,
+scroll zoom, and zoom buttons. The connecting line is a geographic guide,
+not a measured network path, and the pin is not an exact data center address.
+The local preview tests directly against Cloudflare's public download and upload
+endpoints. It never uses localhost for throughput or latency; its local Worker
+retrieves the public endpoint's location headers for the map and resolves the
+reported ASN to its registered network name through RIPEstat. Old loopback
+diagnostics stay out of its internet-test history.
+Map shapes come from [Natural Earth](https://www.naturalearthdata.com/about/terms-of-use/)
+(public domain). Approximate colo coordinates come from the
+[Netrvin Cloudflare colo list](https://github.com/Netrvin/cloudflare-colo-list)
+(MIT; license copy in `scripts/data/COLO-LICENSE.txt`).
+
+Download and upload have separate live throughput traces. Loaded-latency
+probe marks are drawn along the bottom edge of each trace.
+
+The use-case cards show the relevant measurements with context. They do not
+claim that a game or call will fail based on one test server's latency.
+The test uses one connection per direction, with no stream setting. This shows
+single-transfer performance; tests that use several parallel transfers or
+different sampling methods can produce different throughput numbers.
 
 ## Engineering notes
 
@@ -49,14 +66,20 @@ Live at **https://fast.temidayoxyz.workers.dev**.
 
 ```bash
 npm install
-npm run blobs      # generate 6 × 24 MiB random-byte test blobs (gitignored)
+npm run blobs      # generate one 24 MiB random-byte test blob (gitignored)
+npm run map        # regenerate the map SVG and edge coordinate table
 npm run preview    # build + wrangler dev → http://localhost:8787
 npm run check      # typecheck app + worker
 npm run deploy     # build + deploy to Cloudflare (free plan is enough)
 ```
 
-Keyboard: `Space` starts/aborts, `Esc` aborts. Click the unit label to toggle
-Mbps / MB/s.
+Keyboard: `Space` starts/aborts when focus is outside a control; `Esc` aborts.
+The readout switches automatically between Kbps and Mbps.
+
+The local preview measures Internet traffic against Cloudflare's public speed
+test service. The deployed app measures against its own Cloudflare Worker. These
+may route to different edges, and different speed tests use different payloads
+and sampling methods, so results need not match exactly. All speeds use Mbps.
 
 ## License
 
