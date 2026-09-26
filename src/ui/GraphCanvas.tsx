@@ -4,7 +4,6 @@ import type { Sample } from '../engine/stats';
 
 const HEIGHT = 104;
 const WINDOW = 300;
-const COLORS = { d: '#ff9f53', u: '#bca8ff' } as const;
 
 /** Separate live traces keep download and upload easy to scan. */
 export function GraphCanvas({ kind }: { kind: 'd' | 'u' }) {
@@ -13,6 +12,7 @@ export function GraphCanvas({ kind }: { kind: 'd' | 'u' }) {
   useEffect(() => {
     const canvas = ref.current!;
     const ctx = canvas.getContext('2d')!;
+    const color = getComputedStyle(canvas).getPropertyValue(kind === 'd' ? '--color-down' : '--color-up').trim();
     let lastKey = '';
     let raf = 0;
     const loop = (): void => {
@@ -20,7 +20,7 @@ export function GraphCanvas({ kind }: { kind: 'd' | 'u' }) {
       const key = `${speedTest.getSnapshot().phase}:${live.samples.length}:${live.probes.length}:${canvas.clientWidth}:${window.devicePixelRatio}`;
       if (key !== lastKey) {
         lastKey = key;
-        render(ctx, canvas, live, kind);
+        render(ctx, canvas, live, kind, color);
       }
       raf = requestAnimationFrame(loop);
     };
@@ -38,7 +38,7 @@ export function GraphCanvas({ kind }: { kind: 'd' | 'u' }) {
   );
 }
 
-function render(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, live: Live, kind: 'd' | 'u'): void {
+function render(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, live: Live, kind: 'd' | 'u', color: string): void {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
@@ -63,7 +63,7 @@ function render(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, live: 
   const start = samples[0].at;
   const end = samples.at(-1)!.at;
   const xAt = (at: number): number => ((at - start) / Math.max(end - start, 1)) * w;
-  drawTrace(ctx, h, samples, xAt, COLORS[kind]);
+  drawTrace(ctx, h, samples, xAt, color);
   drawProbeMarks(ctx, w, h, live.probes, start, end, xAt);
 }
 

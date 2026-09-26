@@ -60,7 +60,7 @@ export default function App() {
           <div>
             <h1 className="font-display text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Your internet speed</h1>
             {snap.phase !== 'done' && (
-              <p className={`mt-2 text-sm ${snap.error ? 'text-down' : 'text-ash'}`} role="status">{status}</p>
+              <p className={`mt-2 text-sm ${snap.error ? 'text-error' : 'text-ash'}`} role="status">{status}</p>
             )}
           </div>
           <div className="hidden lg:block">

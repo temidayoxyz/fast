@@ -13,8 +13,9 @@
   --color-graphite: #353c45;
   --color-ash: #9da6b2;
   --color-signal: #f1f3f6;
-  --color-down: #ff9f53;
-  --color-up: #bca8ff;
+  --color-down: #5ee0b1;
+  --color-up: #6cb8ff;
+  --color-error: #ff817b;
 
   --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
