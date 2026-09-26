@@ -16,7 +16,7 @@ analytics, no framework bloat — just the measurement.
 | **Downlink** | One connection pulling 24 MiB test data, byte-counted via `ReadableStream` |
 | **Uplink** | One connection sending repeated 2 MiB random-blob POSTs, counted via browser upload progress; the deployed Worker also checks each completed byte count |
 | **Latency / jitter** | 12 sequential probes, median + mean absolute delta |
-| **Bufferbloat** | Probes fired *during* transfer; graded A–F against the idle baseline |
+| **Extra delay (bufferbloat)** | Median latency during transfers minus the idle baseline, shown in milliseconds |
 | **Edge PoP** | The deployed Worker reports its colo from `request.cf`; localhost uses Cloudflare's public speed-test edge metadata |
 
 The server map plots the visitor's approximate area and the reported Cloudflare

@@ -8,9 +8,9 @@ export const pingTile = (live: Live): string =>
 export const jitterTile = (live: Live): string =>
   live.jitter > 0 ? `${live.jitter.toFixed(1)} ms` : '—';
 
-export const bloatTile = (_live: Live, snap: Snapshot): string => {
+export const extraDelayTile = (_live: Live, snap: Snapshot): string => {
   const r = snap.result;
-  if (r) return r.bloatMs === null ? '—' : `${r.bloatGrade} · ${Math.round(r.bloatMs)} ms`;
+  if (r) return r.bloatMs === null ? '—' : `${Math.round(r.bloatMs)} ms`;
   return speedTest.running ? '···' : '—';
 };
 
@@ -27,7 +27,7 @@ export function MetricTile(props: {
       }
     };
     paint();
-    // repaint on ticks AND phase transitions — terminal values (bloat grade,
+    // repaint on ticks AND phase transitions — terminal values (loaded delay,
     // finalized scores) only exist after the last tick has fired
     const offTick = speedTest.onTick(paint);
     const offCoarse = speedTest.subscribe(paint);

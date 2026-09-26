@@ -5,7 +5,7 @@ import { decodeResult } from '../lib/share';
 import { ConnectionPanel } from './ConnectionPanel';
 import { Controls } from './Controls';
 import { HistoryTable } from './HistoryTable';
-import { MetricTile, bloatTile, jitterTile, pingTile } from './MetricTile';
+import { MetricTile, extraDelayTile, jitterTile, pingTile } from './MetricTile';
 import { ResultPanel } from './ResultPanel';
 import { TransferPanel } from './TransferPanel';
 
@@ -93,7 +93,7 @@ export default function App() {
               <div className="grid grid-cols-3 gap-2 sm:gap-3">
                 <MetricTile label="PING" format={pingTile} />
                 <MetricTile label="JITTER" format={jitterTile} />
-                <MetricTile label="BLOAT" format={bloatTile} />
+                <MetricTile label="EXTRA DELAY" format={extraDelayTile} />
               </div>
             </section>
           </div>
