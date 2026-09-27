@@ -1,13 +1,16 @@
 # FAST XYZ
 
-A compact internet speed instrument. Single Cloudflare Worker, zero backend
-state, about **26 KB of JavaScript** gzipped.
+A lightweight internet speed test with a dark interface, mint download graphs,
+and blue upload graphs. Single Cloudflare Worker, zero backend state, about
+**26 KB of JavaScript** gzipped.
+
+Try it at **[fast.temidayo.xyz](https://fast.temidayo.xyz/)**.
 
 ## Why
 
-fast.com and speed.cloudflare.com are good instruments wrapped in heavy apps.
-Fast XYZ keeps the instrument and loses the weight: no login, no database, no
-analytics, no framework bloat — just the measurement.
+Fast XYZ keeps measurement simple: live download and upload graphs, clear
+response-time metrics, and history saved on your device. No login, database,
+or analytics.
 
 ## What it measures
 
@@ -60,7 +63,11 @@ different sampling methods can produce different throughput numbers.
 ## Deploys
 
 Push to `main` → Cloudflare Workers Builds builds and deploys automatically.
-Live at **https://fast.temidayoxyz.workers.dev**.
+Live at **[fast.temidayo.xyz](https://fast.temidayo.xyz/)**.
+
+Social previews use `public/og-image.jpg` (1200 × 630), with Open Graph and
+Twitter card metadata in `index.html`. The artwork follows the app's dark,
+mint, and blue palette; its generation brief is in [docs/og-image.md](docs/og-image.md).
 
 ## Develop
 
